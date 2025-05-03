@@ -1,40 +1,42 @@
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
-from models.models import Base
-from schemas.schemas import Politician, PoliticianCreate
-from crud.crud import create_politician, get_politicians  # <-- ВАЖНО!
-from database import SessionLocal, engine
+from fastapi import FastAPI, Depends, HTTPException
+from sqlmodel.ext.asyncio.session import AsyncSession
+from database.politician.schemes import Politician, PoliticianCreate
+from database.politician.models import PoliticianOperations
+from database_connection import get_session, init_db
 
-# Создаём таблицы в базе данных (если их ещё нет)
-Base.metadata.create_all(bind=engine)
-
-# Создаём экземпляр приложения FastAPI
+# Create FastAPI app
 app = FastAPI()
 
-# Зависимость для подключения к базе данных
-def get_db():
-    """
-    Получить сессию базы данных.
-    Автоматически открывает и закрывает соединение.
-    """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    await init_db()
 
-# Эндпоинт для создания нового политика
+# Endpoint for creating a new politician
 @app.post("/politicians/", response_model=Politician)
-def create_politician_endpoint(politician: PoliticianCreate, db: Session = Depends(get_db)):
+async def create_politician_endpoint(
+    politician_data: PoliticianCreate,
+    session: AsyncSession = Depends(get_session)
+):
     """
-    Создать нового политика.
+    Create a new politician.
     """
-    return create_politician(db=db, politician=politician)
+    politician = Politician(**politician_data.dict())
+    operations = PoliticianOperations(session)
+    status, message = await operations.create(politician)
+    if not status:
+        raise HTTPException(status_code=400, detail=message)
+    return politician
 
-# Эндпоинт для получения списка политиков
+# Endpoint for getting list of politicians
 @app.get("/politicians/", response_model=list[Politician])
-def read_politicians(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+async def read_politicians(
+    skip: int = 0,
+    limit: int = 10,
+    session: AsyncSession = Depends(get_session)
+):
     """
-    Получить список политиков с поддержкой пагинации.
+    Get list of politicians with pagination support.
     """
-    return get_politicians(db=db, skip=skip, limit=limit)
+    operations = PoliticianOperations(session)
+    return await operations.get_politicians(skip=skip, limit=limit)
