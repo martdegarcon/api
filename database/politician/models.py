@@ -2,6 +2,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from core.models import BaseOperations
 from .schemes import Politician
+from uuid import UUID
 
 class PoliticianOperations(BaseOperations):
     def __init__(self, session: AsyncSession):
@@ -30,6 +31,30 @@ class PoliticianOperations(BaseOperations):
         query = select(Politician).offset(skip).limit(limit)
         result = await self.session.execute(query)
         return result.scalars().all()
+
+    async def get_politician(self, uuid: UUID) -> Politician:
+        query = select(Politician).where(Politician.uuid == uuid)
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def update_politician(self, uuid: UUID, data: dict) -> Politician:
+        politician = await self.get_politician(uuid)
+        if not politician:
+            return None
+        for key, value in data.items():
+            setattr(politician, key, value)
+        self.session.add(politician)
+        await self.session.commit()
+        await self.session.refresh(politician)
+        return politician
+
+    async def delete_politician(self, uuid: UUID) -> Politician:
+        politician = await self.get_politician(uuid)
+        if not politician:
+            return None
+        await self.session.delete(politician)
+        await self.session.commit()
+        return politician
 
     @staticmethod
     async def _validate_politician(politician: Politician) -> tuple[bool, str]:
